@@ -1,0 +1,48 @@
+# THROWAWAY validation workflow — NOT for upstream. Proves the
+# brpc_channel_unittest size=large change (a) passes the binary that the
+# unsharded medium=300s baseline TIMED OUT on, and (b) is stable across 20
+# no-cache runs. Lives only on ci/backup-deflake-bench; the PR links its run.
+#
+# Prior run 27396621709 already established the baselines:
+#   - unsharded size=medium (300s): TIMEOUT in 4/5 runs  -> the bug
+#   - shard_count=4:                FAILED  20/20 (cross-shard port interference)
+# This run validates the chosen fix: size=large, no sharding.
+name: backup-deflake-bench
+
+on:
+  push:
+    branches: [ ci/backup-deflake-bench ]
+  workflow_dispatch:
+
+jobs:
+  # 20 no-cache runs of the size=large target. 20/20 PASSED = stable fix.
+  flake-proof:
+    runs-on: ubuntu-22.04
+    steps:
+    - uses: actions/checkout@v2
+    - uses: ./.github/actions/install-essential-dependencies
+    - run: echo "runner cores (nproc) = $(nproc)"
+    - run: grep -A2 "per_test_size" test/BUILD.bazel
+    - name: 20x no-cache run (size=large, no sharding)
+      run: |
+        bazel test //test:brpc_channel_unittest \
+          --runs_per_test=20 \
+          --nocache_test_results \
+          --test_output=errors
+
+  # Single timed run; capture the per-test wall seconds Bazel reports
+  # (compare against the 300s ceiling the baseline blew).
+  size-large-timing:
+    runs-on: ubuntu-22.04
+    steps:
+    - uses: actions/checkout@v2
+    - uses: ./.github/actions/install-essential-dependencies
+    - run: echo "runner cores (nproc) = $(nproc)"
+    - name: time size=large binary (1 no-cache run)
+      run: |
+        bazel test //test:brpc_channel_unittest \
+          --nocache_test_results \
+          --test_output=summary \
+          | tee bazel_out.txt
+        echo "=== per-test timing line ==="
+        grep -E "brpc_channel_unittest .* in [0-9.]+s" bazel_out.txt || true
