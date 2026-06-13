@@ -23,10 +23,16 @@ jobs:
     - uses: ./.github/actions/install-essential-dependencies
     - run: echo "runner cores (nproc) = $(nproc)"
     - run: grep -A2 "per_test_size" test/BUILD.bazel
-    - name: 20x no-cache run (size=large, no sharding)
+    # NOTE: --local_test_jobs=1 is REQUIRED. brpc_channel_unittest binds fixed
+    # loopback endpoints and is not isolated, so running its instances
+    # concurrently (Bazel's default for --runs_per_test) makes a
+    # "connection refused" test see a sibling instance's live server and fail.
+    # Serialize the 20 runs to get a valid stability signal.
+    - name: 20x no-cache run, serialized (size=large, no sharding)
       run: |
         bazel test //test:brpc_channel_unittest \
           --runs_per_test=20 \
+          --local_test_jobs=1 \
           --nocache_test_results \
           --test_output=errors
 
